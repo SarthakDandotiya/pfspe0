@@ -21,7 +21,7 @@ That constraint is not a detail. It invalidates two things the PRD currently ass
 | # | Constraint (from you) | Direct implication |
 |---|---|---|
 | C1 | Static site on GitHub Pages | No server, no DB, no API, no server-side rendering, no secrets. **All computation is client-side.** |
-| C2 | Auto-deploy on merge to `main` | GitHub Actions → Pages. `main` is always live, so **CI must gate the merge, not the deploy.** |
+| C2 | Auto-deploy on merge to `main` | GitHub Actions → Pages. Per-PR pipeline gates mergeability, so every merge is pre-validated and safe to publish (§10.3). |
 | C3 | React | React 19 + TypeScript (strict). |
 | C4 | Values always persist to localStorage; full reset available | Debounced autosave, versioned schema, migrations, quota-safe writes, explicit destructive-reset flow. |
 | C5 | Shareable link that reproduces the same model | Self-contained encoded state in the URL — **no shortener service, because that would be a backend and would leak financial data to a third party.** |
@@ -170,19 +170,27 @@ pfspe0/
 - Results transfer as `Float64Array` via transferables to avoid structured-clone copying costs.
 
 ### 5.4 Performance budgets (client-side — see §14 D1)
-5,000 runs × 480 months ≈ 2.4M month-steps. With typed arrays and a tight inner loop this is very achievable in-browser; the budgets are device-tiered because a mid-range Android is not a laptop:
+5,000 runs × 480 months ≈ 2.4M month-steps. With typed arrays, preallocated buffers, and **zero allocation in the inner loop**, this is comfortably achievable in-browser. That discipline is the whole ballgame: a naive implementation that allocates an object per simulated month is 10–50× slower purely from GC pressure, and that — not raw CPU — is what would push this over budget.
 
-| Operation | Desktop | Mid-range mobile |
+**Run count is a scenario parameter, not a device default.** It is stored in the scenario, travels in the share link, and is identical on every device. A slower phone takes *longer* to produce **the same numbers**; it never produces *fewer runs* and therefore different percentiles. Tiering the run count by device would mean two people opening the same share link see different p10/p90 values, silently breaking the share-link reproducibility invariant — a subtle, high-consequence bug in a product whose entire premise is numerical honesty.
+
+Budgets are therefore expressed as *time to the same answer*, and mobile is slower by design rather than less accurate:
+
+| Operation (identical work on all devices) | Desktop | Mid-range mobile |
 |---|---|---|
 | Deterministic recompute (E0/E1) — drives live slider feedback | ≤ 16 ms | ≤ 50 ms |
-| Historical replay, single path (E2) | ≤ 100 ms | ≤ 300 ms |
+| Historical / scripted sequence, single path (E2) | ≤ 100 ms | ≤ 300 ms |
 | Monte Carlo 1,000 runs | ≤ 700 ms | ≤ 2.5 s |
-| Monte Carlo 5,000 runs | ≤ 3 s | ≤ 8 s |
-| Monte Carlo 10,000 runs | ≤ 6 s | opt-in, warned |
+| Monte Carlo 5,000 runs (default) | ≤ 3 s | ≤ 8 s |
+| Monte Carlo 10,000 runs | ≤ 6 s | ≤ 16 s |
 
-**Default run count is 1,000 on mobile / 5,000 on desktop**, detected by `hardwareConcurrency` and screen size, always user-overridable. Deterministic modes update live on slider drag; stochastic modes require the explicit **"Run simulation"** action from PRD §27.
+**Default is 5,000 runs everywhere.** Deterministic modes update live on slider drag; stochastic modes require the explicit **"Run simulation"** action (PRD §27), always with progress and cancel. If a device is slow, the honest response is a progress bar and an accurate ETA — not a quietly degraded answer.
 
-### 5.5 Bundled historical data
+A CI test asserts run-count equality across simulated device profiles, so this cannot regress into a device-derived default later.
+
+### 5.5 Historical data (gated on §14 D3)
+**This section applies only if bundled market data clears the licensing question in §14 D3.** The MVP path assumes it may not, and delivers sequence-of-returns risk via scripted synthetic return sequences instead — same engine interface, no dataset required.
+
 `data/nifty50-tri.<version>.json` is committed and versioned. `MANIFEST.json` carries the snapshot id, covered date range, source attribution, and retrieval date. The engine reads only what it is given; the UI shows the true covered range (PRD §26 — do **not** claim "TRI 1995–present"; state the actual range in the manifest). A scenario pins its `dataSnapshotVersion`; opening an old scenario against a newer bundled snapshot prompts a re-run rather than silently changing results.
 
 ---
@@ -209,14 +217,18 @@ Every persisted blob carries `schemaVersion`. On load: validate with Zod → if 
 
 Every migration ships with a test that feeds a real captured payload of the older version and asserts the migrated output.
 
-### 6.4 Safari's 7-day eviction — a caveat that must be surfaced
-Safari's ITP caps script-writable storage: for a site the user has not interacted with in **7 days of browser use**, localStorage is deleted. On iOS this is the dominant browser engine, and you expect mostly mobile users. **localStorage alone is therefore not a durable-storage promise.**
+### 6.4 Safari's 7-day eviction — accepted limitation
+Safari's ITP caps script-writable storage: for a site the user has not interacted with in **7 days of browser use**, localStorage is deleted. On iOS this is the dominant engine, and most users are expected on phones. **localStorage is therefore not a durable-storage guarantee, and no amount of engineering on a static host can make it one** — the platform decides, not us.
 
-Mitigations (all in scope):
-1. Never claim data is permanently safe; the UI says "saved on this device."
-2. Prominent, one-click **Export to JSON file**.
-3. Prompt an export after the user completes a substantial scenario.
-4. Share links double as durable backups (the state is in the URL — bookmarkable).
+**Decision: accepted.** We do not chase workarounds (IndexedDB is subject to the same ITP policy; a backend would solve it but is ruled out by C1). We handle it honestly and identically on every browser — no Safari-specific degraded path, no scary Safari-only warning. The mitigations below are simply how the app always behaves:
+
+1. The UI says **"saved on this device"** — never "saved" or "synced". True everywhere, alarming nowhere.
+2. Prominent, one-click **Export to JSON**, always available.
+3. A gentle, dismissible nudge to export or bookmark a share link after a substantial scenario is completed — shown to everyone, not just Safari users.
+4. Share links double as durable backups: the state is entirely in the URL, so a bookmark or a message to yourself survives any storage eviction.
+5. If a returning user's storage is found empty, the app opens in clean first-run state rather than showing a data-loss error — there is no way to distinguish eviction from a first visit, so we do not pretend to.
+
+The net effect: a Safari user who returns after three weeks may need to re-open their bookmark or re-import their export. That is the residual cost, and it is accepted.
 
 ### 6.5 Reset semantics
 Three distinct, separately-tested operations — "reset everything" is destructive and deserves precision:
@@ -460,8 +472,22 @@ The full suite runs **again** before deploy. Since `main` is live the moment it 
 - Repo settings: Pages source = **GitHub Actions**; environment `github-pages` with the standard `pages: write` / `id-token: write` permissions.
 - Deploy is idempotent; rollback = revert the commit on `main` (redeploys automatically).
 
-### 10.3 Branch protection (needed for C2 to be safe)
-`main` protected: PR required, CI required, no direct pushes, no force-push. Because merge-to-main publishes immediately, **branch protection is the only thing standing between a bad commit and production.** Worth configuring before the first real feature lands.
+### 10.3 Branch protection — the mechanism that makes deploy-on-merge safe
+
+Your model is exactly right: **each PR runs the full safety pipeline; a PR is only mergeable once those checks are green; therefore any merge to `main` is already-validated and safe to publish automatically.** Deploy-on-merge is not a risk in that model — it is a consequence of the gate being upstream of the merge, which is where a gate belongs.
+
+Two GitHub settings do the actual work, and both are needed:
+
+1. **Require status checks to pass before merging** — lists `ci.yml`'s jobs as required. This is the gate itself: the merge button stays disabled until they are green.
+2. **Require branches to be up to date before merging** — this is the one people skip, and it closes the gap the first setting leaves open. Without it, two PRs can each be green in isolation and still break `main` when combined: PR A renames an engine function, PR B adds a caller of the old name, both pass against the base they branched from, and `main` breaks on the second merge. Requiring up-to-date branches forces the PR to absorb `main` and re-run CI against the merged result, so **what CI validated is exactly what gets deployed.**
+
+Plus: no direct pushes to `main`, no force-push, and linear history (squash or rebase merges) so a revert is a clean single-commit operation.
+
+**Rollback** is `git revert` on `main`, which redeploys automatically — typically live again in a couple of minutes. Worth rehearsing once before real users exist.
+
+With both settings on, the "full suite re-runs before deploy" step in `deploy.yml` becomes belt-and-braces rather than load-bearing. **Keep it anyway** — it is a few CI minutes and it catches non-determinism, a flaky-test-that-only-fails-sometimes, and any drift between the PR environment and the deploy environment. Cheap insurance for a branch that is always live.
+
+**During planning (now):** none of this applies yet — committing docs directly to `main` is fine and is what we are doing. Turn on branch protection at **P0**, when the first executable code lands and `main` starts being a deployable artifact rather than a folder of markdown.
 
 ---
 
@@ -512,20 +538,146 @@ The architecture is the privacy story: **no server means no data collection.** F
 
 ---
 
-## 14. PRD deltas — changes this constraint forces
+## 14. PRD conflicts — what breaks, why, and what it costs
 
-The static-hosting requirement conflicts with parts of PRD v2.0. These are the required amendments; I have **not** edited `PRD.md` yet, so you can review them first.
+PRD v2.0 was written before the static-hosting constraint existed, so parts of it assume infrastructure that cannot exist here. This section explains each conflict properly: **what the PRD assumes · why static hosting breaks it · what it actually costs · the options · the decision.**
 
-| # | PRD says | Must become | Impact |
+Four are now settled. **Two need your call** (D3, D5) — they are flagged as such and are the only things blocking a final plan.
+
+---
+
+### D1 — Server-side Monte Carlo → client-side workers · **SETTLED**
+
+**What the PRD assumes.** §27: *"V2 Monte Carlo runs server-side (or in a Web Worker/WASM) with a target of ≤3s for a 5,000-run scenario."* That hedge existed because 10,000 runs × 480 months = 4.8M month-steps looked like more than a browser should be asked to do.
+
+**Why static hosting breaks it.** There is no server. Not "a server we'd rather avoid" — there is nowhere to run server code at all. GitHub Pages serves bytes and nothing else.
+
+**What it actually costs — less than the PRD feared.** Working the arithmetic properly: each simulated month is roughly 30–80 arithmetic operations plus one RNG draw. 5,000 runs × 480 months ≈ 2.4M steps ≈ 120M operations. A tight, monomorphic JS loop over typed arrays sustains hundreds of millions of simple operations per second, so this is well under a second single-threaded on a desktop, and faster still sharded across workers. 10,000 runs stays in low single-digit seconds.
+
+So the honest conclusion is that **the PRD's concern was overstated for a well-written engine**, and the mitigation is engineering discipline rather than architecture:
+
+- No object allocation inside the month loop — preallocated `Float64Array` buffers, reused across runs. This is the single decision that matters; an implementation allocating one object per simulated month runs 10–50× slower purely from garbage collection, and that is what would actually blow the budget.
+- Shard by run index across workers; merge percentiles on the main thread.
+- Per-worker seeds derived as `hash(masterSeed, shardIndex)` so results are identical regardless of core count (§5.3).
+
+**What is genuinely lost:** nothing the PRD needs. Server-side would cap out far higher (100,000+ runs), but the PRD specifies 1,000–10,000. We also *gain* from the constraint: no network round-trip, no per-run hosting cost, and financial inputs never leave the device.
+
+**Decision.** Client-side workers only. Delete the "server-side" clause from PRD §27. Add the no-allocation-in-hot-loop rule as an engine requirement with a performance regression test.
+
+---
+
+### D2 — Authenticated per-user storage → local-only · **SETTLED**
+
+**What the PRD assumes.** §27: *"stored per authenticated user; local-only mode is offered for privacy-sensitive users."* Two modes, with accounts as the default.
+
+**Why static hosting breaks it.** Accounts need a server to hold credentials and data. No server, no accounts. Local-only is not a mode — it is the only possibility.
+
+**What it actually costs.** Three real losses, and they are worth naming rather than glossing over:
+
+1. **No cross-device sync.** Start a plan on your phone, it is not on your laptop.
+2. **No recovery.** Device lost or storage cleared, and the plan is gone unless the user exported or bookmarked a share link.
+3. **No server-side anything** — no support tooling, no per-user diagnostics.
+
+**What it buys, which is substantial.** The privacy posture stops being a policy promise and becomes an architectural fact: there is no server to breach, no database to leak, no credentials to steal, no auth code to get wrong (account takeover is the most common serious web vulnerability and we simply do not have the surface). DPDP obligations shrink dramatically because we never receive personal data at all — the app processes data entirely on the user's own device. And hosting is free and indefinitely maintainable, which for a project like this is not a small thing.
+
+**How the losses are substituted.** Share links (§7) *are* a cross-device transfer: send yourself the link and continue on the other device. File export/import covers backup and recovery. Together these cover most of the sync use case with zero infrastructure — clunkier than real sync, but adequate, and the honest trade for never holding anyone's financial data.
+
+**Decision.** Local-only, permanently. PRD §27's "authenticated user" clause is deleted; the privacy policy states plainly that all data stays on the device and that share links embed the user's inputs.
+
+---
+
+### D3 — Bundled market data raises the licensing risk · ⚠️ **NEEDS YOUR DECISION**
+
+This is the conflict that genuinely matters, and the one I most want to be clear about.
+
+**What the PRD assumes.** §26 and §55: historical NIFTY 50 TRI data from *"an authoritative NIFTY/NSE source,"* used for historical return mode, crash replay, and drawdown analysis. R1 already flagged licensing as a launch gate.
+
+**Why static hosting makes it worse — this is the subtle part.** The risk does not merely persist; **its legal character changes.**
+
+- **With a server:** the backend fetches the data, computes with it, and serves *derived results* to users. You are a *consumer* of the dataset. Nobody downloads the series from you.
+- **With a static site:** the series must be committed to a public GitHub repository and is downloaded verbatim by every visitor. That is **redistribution of the dataset**, which is a materially stronger claim than consumption and is typically what index licensing terms restrict most tightly.
+
+So the constraint converts "we use their data" into "we publish their data." Same dataset, meaningfully different question.
+
+**What I can and cannot tell you.** NSE Indices licenses index data commercially, and TRI series are part of that commercial offering. **I cannot tell you whether their terms permit what we want** — I have not read the current licence, terms change, and this is a question for someone who can read the actual agreement. Treat everything below as options to evaluate, not as a legal conclusion.
+
+**The knock-on nobody would spot immediately.** In the adversarial review I made historical replay (E2) the MVP vehicle for **sequence-of-returns risk** (finding A-6) — because a core PRD principle needed *some* engine in MVP that could express it. If historical data cannot ship, that fix collapses and A-6 reopens.
+
+**Fortunately there is a clean escape.** Sequence risk needs a *varying* return path, not a *historical* one. A scripted synthetic sequence demonstrates it perfectly, and arguably teaches it better: hold the average at exactly 9% and reorder the years — "bad years first" versus "good years first" — and show two very different outcomes from an identical mean. Zero licensed data required, and it isolates the concept more cleanly than a real historical path where many variables move at once.
+
+**Options:**
+
+| # | Option | What it enables | Risk | Cost |
+|---|---|---|---|---|
+| **a** | **No bundled data in MVP.** Fixed/discrete returns + **scripted synthetic sequences** | Everything except real historical replay; sequence risk fully covered | None | Loses "here is what actually happened" credibility |
+| **b** | **Derived statistics only** — long-run CAGR, volatility, and a drawdown catalogue (dates, depths, recovery durations), not the month-by-month series | Historical haircut mode, crash replay, MC calibration | Lower, but not zero — still needs checking | Small dataset, most features retained |
+| **c** | **User-supplied CSV** | Full historical replay for whoever bothers | None — we redistribute nothing | Realistically ~1% of users will do it |
+| **d** | **Licensed data** | Everything | None once signed | Money, time, may not be offered for a free consumer app |
+
+**My recommendation: (a) + (b) for MVP, with (c) as a power-user escape hatch, and (d) evaluated in parallel.** Ship fixed/discrete returns plus scripted sequences, add the drawdown catalogue if (b) clears review, and let anyone who wants true replay supply their own file. This keeps the entire MVP shippable while the licensing question is answered on its own timeline instead of blocking the build.
+
+**What I need from you:** either (i) someone checks NSE Indices' terms for redistribution in a free public app, or (ii) you accept (a)+(b)+(c) for MVP and we treat full historical replay as licence-gated V2. **Option (ii) unblocks everything immediately** and is what I would do.
+
+---
+
+### D4 — Latency budget → same answer everywhere, slower on slow devices · **SETTLED by your instruction**
+
+**What the PRD assumes.** §27: an unqualified *"≤3s for a 5,000-run scenario."*
+
+**Why it breaks.** On a static host that budget must be met by whatever device the user brings. A mid-range Android is roughly 3–5× slower than a laptop, so one number cannot describe both.
+
+**My first draft got this wrong, and your "experience should be the same" instruction is what caught it.** I originally specified device-tiered *run counts* — 1,000 on mobile, 5,000 on desktop. That is a real bug, not a preference: run count changes the percentile estimates, so **the same share link would produce different p10/p90 numbers on a phone than on a laptop.** It would have silently broken the share-link reproducibility invariant, which is the one property the sharing feature exists to provide. Worse, it fails quietly — everything looks fine, the numbers are just wrong.
+
+**Decision.** Run count is a **scenario parameter**, stored and shared, identical everywhere; default 5,000 on all devices. Slow devices take longer and show progress with an accurate ETA and a cancel button — they never get a different answer. Budgets are restated as time-to-the-same-result in §5.4, and a CI test asserts run-count equality across simulated device profiles so this cannot creep back in.
+
+---
+
+### D5 — Product metrics are unmeasurable without a tracker · ⚠️ **NEEDS YOUR DECISION**
+
+**What the PRD assumes.** §29 asks for activation, engagement, and model-trust metrics (what % complete a first scenario, what % open the "Why?" view).
+
+**Why static hosting breaks it.** Measuring behaviour requires sending events somewhere. There is no somewhere. The only route is a third-party script, which contradicts §13's *"no third-party requests at runtime"* — the property that currently makes the CSP tight and the privacy claim absolute.
+
+**Worth being straight with you: this requirement is mine, not yours.** I added §29's product metrics in the adversarial review (finding A-26) because the original PRD had no measurable success criteria. That critique was fair for a commercial product. It may simply not apply here — and the right fix might be to **narrow the requirement rather than add surveillance to satisfy a requirement I invented.**
+
+**Options:**
+
+| # | Option | Cost |
+|---|---|---|
+| **a** | **No analytics.** Delete §29's product metrics; keep the ten user-capability criteria, which are verifiable by watching a handful of real people use it | You fly blind on where users drop off |
+| **b** | **Privacy-preserving analytics** (Plausible/Fathom/GoatCounter — cookieless, aggregate, no PII) | One third-party request; needs privacy-policy disclosure; weakens the "no external requests" claim; small monthly cost |
+| **c** | Self-hosted analytics | Impossible — it is a server |
+
+**The question that decides it:** is this a tool for you and people you share it with, or a product you intend to grow? For the former, (a) is obviously right. For the latter, (b) is the minimum-harm option, and even then only after MVP.
+
+**My recommendation: (a) for MVP.** The ten capability criteria are testable by usability observation, which is more informative than funnel metrics at this stage anyway.
+
+---
+
+### D6 — Data snapshot versioning → build-time asset · **SETTLED (mechanical)**
+
+**What the PRD assumes.** §26: scenarios pin a data snapshot version; when data updates, the user is prompted to re-run rather than having old results silently change.
+
+**Why it "breaks".** Barely. There is no API to version against, so a data update *is* a new deployment.
+
+**What it costs.** Nothing. User-visible behaviour is identical: the scenario records the snapshot id it was computed against; if the loaded build ships a newer id, the user is prompted to re-run. Only the mechanism changes — a build-time asset rather than a fetched resource. If D3 resolves toward (a)/(b), this shrinks further for MVP.
+
+**Decision.** Mechanical amendment to PRD §26. No impact.
+
+---
+
+### Summary
+
+| # | Conflict | Status | Needs you? |
 |---|---|---|---|
-| **D1** | §27: "V2 Monte Carlo runs **server-side** (or Web Worker/WASM)" | **Client-side Web Workers only.** Device-tiered budgets (§5.4); mobile defaults to 1,000 runs | Moderate — analysis shows in-browser is feasible; budgets get realistic instead of aspirational |
-| **D2** | §27: "stored per **authenticated user**; local-only mode offered" | **Local-only is the only mode.** No accounts, no server storage | Simplifies R3/R6 substantially; makes DPDP near-trivial. Cost: no cross-device sync — share links and file export are the substitutes |
-| **D3** | §26: market data from an authoritative source, snapshot-versioned | Data is a **committed static asset in a public repo** | **Raises R1 (licensing).** Redistributing NSE index data publicly is a stronger claim than fetching it server-side. Needs legal clearance before shipping — flagged as a launch gate |
-| **D4** | §27: "≤ 3 s for a 5,000-run scenario" (unqualified) | Device-tiered: ≤ 3 s desktop, ≤ 8 s mid-range mobile | Honest for a mobile-first audience |
-| **D5** | §29: activation / engagement / trust product metrics | **Not measurable without a third-party tracker**, which contradicts the privacy posture | Open decision — see §16 O4 |
-| **D6** | §26: "user is prompted to re-run against new data" | Data version is tied to the **deployed build**, not fetched | Behaviour is the same; the mechanism is a build-time asset |
+| D1 | Server-side Monte Carlo | Client workers; feasible with no-allocation discipline | No |
+| D2 | Authenticated storage | Local-only, permanently | No |
+| D3 | Market-data licensing | **Recommend (a)+(b)+(c); full replay licence-gated** | **Yes** |
+| D4 | Latency budget | Same run count everywhere; slower ≠ different | No — settled by your instruction |
+| D5 | Product metrics | **Recommend dropping them for MVP** | **Yes** |
+| D6 | Data versioning | Build-time asset | No |
 
-D1–D4 and D6 are mechanical. **D3 and D5 need your decision** before they can be closed.
+`PRD.md` is still unedited. Once D3 and D5 are decided I will apply all six amendments in one pass so the two documents stop disagreeing.
 
 ---
 
@@ -538,7 +690,7 @@ D1–D4 and D6 are mechanical. **D3 and D5 need your decision** before they can 
 | **P2 — Shell** | Store, localStorage + migrations, reset flows, responsive layout, input components | E2E persistence and reset journeys pass |
 | **P3 — Share** | Codec, fragment routing, import UX, size guards | Round-trip E2E across a fresh browser context passes |
 | **P4 — Visualisation** | Wealth chart (Bear/Base/Bull), cash-flow chart, goal status, table view | Visual regression baselines committed |
-| **P5 — Historical (E2)** | Bundled TRI data, historical mode, replay, sequence-risk surfacing | Golden-master scenarios locked |
+| **P5 — Sequences (E2)** | **Scripted synthetic sequences + sequence-risk surfacing** (no licensed data needed). Historical replay and the drawdown catalogue land here *only if* §14 D3 clears | Golden-master scenarios locked; sequence risk demonstrable without bundled data |
 | **P6 — MVP hardening** | Validation, failure detection, audit view, disclaimers, real-device testing | PRD §32 MVP scope complete; honesty matrix enforced by types |
 | **P7 — V2** | Monte Carlo in workers, percentiles, probability outputs, tax engine, life modules | Determinism-across-core-count test passes |
 
@@ -552,8 +704,8 @@ The engine lands **before** any UI. It is the part that must be correct, it is t
 |---|---|---|---|
 | **O1** | Custom domain? | `github.io` subdomain vs custom domain | `github.io` for MVP — a custom domain adds DNS/cert steps for no functional gain. Note the base path changes if you move later |
 | **O2** | Multiple saved scenarios in MVP? | Single scenario vs named list | **Single** in MVP (PRD scenario comparison is a V1.5/V2 feature); the storage schema already accommodates a list |
-| **O3** | Market data licensing (D3) | Bundle NSE-derived data · use a licensed source · ship a user-supplied-CSV mode | Needs your call — a **user-supplied CSV** path is the fully safe fallback if licensing stalls, and keeps historical mode shippable |
-| **O4** | Analytics vs privacy (D5) | None · self-hosted · privacy-preserving third party | **None for MVP.** It matches the privacy posture; revisit only if PRD §29 metrics become a real business need |
+| **O3** | Market data licensing | See **§14 D3** for the full analysis | **Open.** Recommend: no bundled series in MVP + derived statistics + user-supplied CSV; full historical replay is licence-gated V2 |
+| **O4** | Analytics vs privacy | See **§14 D5** for the full analysis | **Open.** Recommend: none for MVP, and narrow PRD §29 to the ten user-capability criteria |
 | **O5** | PWA / offline install | Skip · full service worker | **Skip in MVP** — a service worker adds a cache-invalidation failure mode that interacts badly with auto-deploy-on-merge. Revisit post-MVP |
 | **O6** | Error reporting with no backend | None · Sentry free tier | **None for MVP** — a reporter would transmit data off-device, contradicting §13. Rely on the test suite and a local error boundary with a copyable report |
 
