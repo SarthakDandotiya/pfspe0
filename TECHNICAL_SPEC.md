@@ -114,14 +114,13 @@ pfspe0/
 ├── public/
 │   ├── .nojekyll               # stop Pages ignoring _-prefixed assets
 │   └── 404.html                # SPA fallback (see §10.2)
-├── data/
-│   ├── nifty50-tri.<version>.json
-│   └── MANIFEST.json           # snapshot id, range, source, retrieved-on
+│                               # NOTE: no data/ directory — the app ships
+│                               # no market data at all (§14 D3)
 ├── src/
 │   ├── engine/                 # PURE. no react/dom imports. ~100% covered.
 │   │   ├── time/               # month-index clock, age↔calendar (PRD §4)
 │   │   ├── money/              # paise arithmetic, rounding, formatting inputs
-│   │   ├── returns/            # Fixed | Discrete | Historical | Bucket | Replay | MonteCarlo
+│   │   ├── returns/            # Fixed | Discrete | Bucket | ScriptedSequence | MonteCarlo
 │   │   ├── inflation/
 │   │   ├── cashflow/           # the single hierarchy (PRD §24)
 │   │   ├── tax/                # versioned by assessment year (PRD §19)
@@ -188,8 +187,8 @@ Budgets are therefore expressed as *time to the same answer*, and mobile is slow
 
 A CI test asserts run-count equality across simulated device profiles, so this cannot regress into a device-derived default later.
 
-### 5.5 Historical data (gated on §14 D3)
-**This section applies only if bundled market data clears the licensing question in §14 D3.** The MVP path assumes it may not, and delivers sequence-of-returns risk via scripted synthetic return sequences instead — same engine interface, no dataset required.
+### 5.5 Return sequences — no bundled data
+**The app ships no market data (§14 D3).** Sequence-of-returns risk is delivered via **scripted stress sequences**: editable presets defined by depth, duration and recovery shape, stored as ordinary scenario data. A user may optionally load their own CSV, which is parsed in-browser, stays on the device, and is never bundled or transmitted. The engine takes a return series as an argument either way, so both paths use one interface.
 
 `data/nifty50-tri.<version>.json` is committed and versioned. `MANIFEST.json` carries the snapshot id, covered date range, source attribution, and retrieval date. The engine reads only what it is given; the UI shows the true covered range (PRD §26 — do **not** claim "TRI 1995–present"; state the actual range in the manifest). A scenario pins its `dataSnapshotVersion`; opening an old scenario against a newer bundled snapshot prompts a re-run rather than silently changing results.
 
@@ -542,7 +541,7 @@ The architecture is the privacy story: **no server means no data collection.** F
 
 PRD v2.0 was written before the static-hosting constraint existed, so parts of it assume infrastructure that cannot exist here. This section explains each conflict properly: **what the PRD assumes · why static hosting breaks it · what it actually costs · the options · the decision.**
 
-Four are now settled. **Two need your call** (D3, D5) — they are flagged as such and are the only things blocking a final plan.
+**All six are now settled.** D3 and D5 were closed by *removing the underlying dependency* rather than by analysis — the cleanest kind of resolution, since a dependency that does not exist cannot go wrong.
 
 ---
 
@@ -586,37 +585,28 @@ So the honest conclusion is that **the PRD's concern was overstated for a well-w
 
 ---
 
-### D3 — Bundled market data raises the licensing risk · ⚠️ **NEEDS YOUR DECISION**
+### D3 — Market data · **CLOSED by removing the dependency**
 
-This is the conflict that genuinely matters, and the one I most want to be clear about.
+**Decision: the app ships no third-party market data at all.** Not a reduced amount, not derived statistics — none.
 
-**What the PRD assumes.** §26 and §55: historical NIFTY 50 TRI data from *"an authoritative NIFTY/NSE source,"* used for historical return mode, crash replay, and drawdown analysis. R1 already flagged licensing as a launch gate.
+This closes the question by construction rather than by review: there is no dataset in the repository, so there is nothing to redistribute and no terms to satisfy. It also matches the client-only architecture, which has nowhere to fetch data from anyway.
 
-**Why static hosting makes it worse — this is the subtle part.** The risk does not merely persist; **its legal character changes.**
+**One correction worth making explicit**, because it is a natural assumption: *manually* extracting data does not change the redistribution question. The issue is not how the data was obtained — it is that committing it to a public repository republishes it to every visitor. Manual extraction for your own private use on your own machine is a different activity from shipping that file in a public app. Since you want none of this to be a question at all, the clean answer is simply not to ship data.
 
-- **With a server:** the backend fetches the data, computes with it, and serves *derived results* to users. You are a *consumer* of the dataset. Nobody downloads the series from you.
-- **With a static site:** the series must be committed to a public GitHub repository and is downloaded verbatim by every visitor. That is **redistribution of the dataset**, which is a materially stronger claim than consumption and is typically what index licensing terms restrict most tightly.
+**What replaces it:**
 
-So the constraint converts "we use their data" into "we publish their data." Same dataset, meaningfully different question.
+| Capability | Replacement |
+|---|---|
+| Historical return mode | User enters a reference CAGR; the app adjusts it. Labelled as *their* input |
+| Crash replay | **Scripted stress sequences** — editable presets (depth, duration, recovery shape). Labelled illustrative shock shapes, not real events |
+| Sequence-of-returns risk | Scripted sequences — hold the mean at 9%, reorder the years. Isolates the concept better than a real path anyway |
+| Monte Carlo calibration | Parametric Student-t with user-set mean, volatility, tail weight |
+| Volatility / correlation defaults | Generic unsourced placeholders (18% / 4% / 0.2), labelled as such, fully editable |
+| True historical replay | **User-supplied CSV**, stays on device, never redistributed |
 
-**What I can and cannot tell you.** NSE Indices licenses index data commercially, and TRI series are part of that commercial offering. **I cannot tell you whether their terms permit what we want** — I have not read the current licence, terms change, and this is a question for someone who can read the actual agreement. Treat everything below as options to evaluate, not as a legal conclusion.
+**What is genuinely lost:** the app cannot say *"here is what the market actually did."* It makes no historical claims — which means it cannot make a false one, and the PRD §23 requirement to separate *historical fact* from *user assumption* becomes trivially satisfiable, because the app holds no historical facts.
 
-**The knock-on nobody would spot immediately.** In the adversarial review I made historical replay (E2) the MVP vehicle for **sequence-of-returns risk** (finding A-6) — because a core PRD principle needed *some* engine in MVP that could express it. If historical data cannot ship, that fix collapses and A-6 reopens.
-
-**Fortunately there is a clean escape.** Sequence risk needs a *varying* return path, not a *historical* one. A scripted synthetic sequence demonstrates it perfectly, and arguably teaches it better: hold the average at exactly 9% and reorder the years — "bad years first" versus "good years first" — and show two very different outcomes from an identical mean. Zero licensed data required, and it isolates the concept more cleanly than a real historical path where many variables move at once.
-
-**Options:**
-
-| # | Option | What it enables | Risk | Cost |
-|---|---|---|---|---|
-| **a** | **No bundled data in MVP.** Fixed/discrete returns + **scripted synthetic sequences** | Everything except real historical replay; sequence risk fully covered | None | Loses "here is what actually happened" credibility |
-| **b** | **Derived statistics only** — long-run CAGR, volatility, and a drawdown catalogue (dates, depths, recovery durations), not the month-by-month series | Historical haircut mode, crash replay, MC calibration | Lower, but not zero — still needs checking | Small dataset, most features retained |
-| **c** | **User-supplied CSV** | Full historical replay for whoever bothers | None — we redistribute nothing | Realistically ~1% of users will do it |
-| **d** | **Licensed data** | Everything | None once signed | Money, time, may not be offered for a free consumer app |
-
-**My recommendation: (a) + (b) for MVP, with (c) as a power-user escape hatch, and (d) evaluated in parallel.** Ship fixed/discrete returns plus scripted sequences, add the drawdown catalogue if (b) clears review, and let anyone who wants true replay supply their own file. This keeps the entire MVP shippable while the licensing question is answered on its own timeline instead of blocking the build.
-
-**What I need from you:** either (i) someone checks NSE Indices' terms for redistribution in a free public app, or (ii) you accept (a)+(b)+(c) for MVP and we treat full historical replay as licence-gated V2. **Option (ii) unblocks everything immediately** and is what I would do.
+**Also settled:** positioning is index-agnostic. Index names survive only as **user-selectable category labels** (a bucket you call "NIFTY 50"), never as a claim that the app holds that index's data.
 
 ---
 
@@ -632,25 +622,17 @@ So the constraint converts "we use their data" into "we publish their data." Sam
 
 ---
 
-### D5 — Product metrics are unmeasurable without a tracker · ⚠️ **NEEDS YOUR DECISION**
+### D5 — Product metrics · **CLOSED: dropped**
 
-**What the PRD assumes.** §29 asks for activation, engagement, and model-trust metrics (what % complete a first scenario, what % open the "Why?" view).
+**Decision: no analytics, no tracker, no telemetry.** PRD §29's behavioural metrics (activation, engagement, model-trust) are deleted.
 
-**Why static hosting breaks it.** Measuring behaviour requires sending events somewhere. There is no somewhere. The only route is a third-party script, which contradicts §13's *"no third-party requests at runtime"* — the property that currently makes the CSP tight and the privacy claim absolute.
+As noted when I raised this, that requirement was mine, not yours — added in the adversarial review because the original PRD had no measurable success criteria. Satisfying it would mean adding a third-party script, which would contradict the property that has become the product's defining characteristic: **nothing leaves the device.** That is a bad trade for a funnel number.
 
-**Worth being straight with you: this requirement is mine, not yours.** I added §29's product metrics in the adversarial review (finding A-26) because the original PRD had no measurable success criteria. That critique was fair for a commercial product. It may simply not apply here — and the right fix might be to **narrow the requirement rather than add surveillance to satisfy a requirement I invented.**
+**What remains measurable without any telemetry:**
+- The ten user-capability criteria — verified by watching real people use it, which is more informative at this stage than a funnel.
+- Internal correctness — golden-master pass rate 100%, engine mutation score ≥ 85%.
 
-**Options:**
-
-| # | Option | Cost |
-|---|---|---|
-| **a** | **No analytics.** Delete §29's product metrics; keep the ten user-capability criteria, which are verifiable by watching a handful of real people use it | You fly blind on where users drop off |
-| **b** | **Privacy-preserving analytics** (Plausible/Fathom/GoatCounter — cookieless, aggregate, no PII) | One third-party request; needs privacy-policy disclosure; weakens the "no external requests" claim; small monthly cost |
-| **c** | Self-hosted analytics | Impossible — it is a server |
-
-**The question that decides it:** is this a tool for you and people you share it with, or a product you intend to grow? For the former, (a) is obviously right. For the latter, (b) is the minimum-harm option, and even then only after MVP.
-
-**My recommendation: (a) for MVP.** The ten capability criteria are testable by usability observation, which is more informative than funnel metrics at this stage anyway.
+**Bonus effect:** with zero collection there is no cookie banner, no consent flow, and no disclosure obligation beyond one honest sentence — *everything stays in your browser; share links contain the inputs you put in them.*
 
 ---
 
@@ -672,12 +654,12 @@ So the constraint converts "we use their data" into "we publish their data." Sam
 |---|---|---|---|
 | D1 | Server-side Monte Carlo | Client workers; feasible with no-allocation discipline | No |
 | D2 | Authenticated storage | Local-only, permanently | No |
-| D3 | Market-data licensing | **Recommend (a)+(b)+(c); full replay licence-gated** | **Yes** |
+| D3 | Market data | **Closed** — ships none; scripted sequences + optional user CSV | No |
 | D4 | Latency budget | Same run count everywhere; slower ≠ different | No — settled by your instruction |
-| D5 | Product metrics | **Recommend dropping them for MVP** | **Yes** |
+| D5 | Product metrics | **Closed** — dropped; no analytics | No |
 | D6 | Data versioning | Build-time asset | No |
 
-`PRD.md` is still unedited. Once D3 and D5 are decided I will apply all six amendments in one pass so the two documents stop disagreeing.
+All six amendments are applied in `PRD.md` v2.1. The two documents now agree.
 
 ---
 
@@ -690,7 +672,7 @@ So the constraint converts "we use their data" into "we publish their data." Sam
 | **P2 — Shell** | Store, localStorage + migrations, reset flows, responsive layout, input components | E2E persistence and reset journeys pass |
 | **P3 — Share** | Codec, fragment routing, import UX, size guards | Round-trip E2E across a fresh browser context passes |
 | **P4 — Visualisation** | Wealth chart (Bear/Base/Bull), cash-flow chart, goal status, table view | Visual regression baselines committed |
-| **P5 — Sequences (E2)** | **Scripted synthetic sequences + sequence-risk surfacing** (no licensed data needed). Historical replay and the drawdown catalogue land here *only if* §14 D3 clears | Golden-master scenarios locked; sequence risk demonstrable without bundled data |
+| **P5 — Sequences (E2)** | **Scripted synthetic sequences + sequence-risk surfacing** (no licensed data needed). User-supplied-CSV replay is an optional extra here | Golden-master scenarios locked; sequence risk demonstrable without bundled data |
 | **P6 — MVP hardening** | Validation, failure detection, audit view, disclaimers, real-device testing | PRD §32 MVP scope complete; honesty matrix enforced by types |
 | **P7 — V2** | Monte Carlo in workers, percentiles, probability outputs, tax engine, life modules | Determinism-across-core-count test passes |
 
@@ -704,8 +686,8 @@ The engine lands **before** any UI. It is the part that must be correct, it is t
 |---|---|---|---|
 | **O1** | Custom domain? | `github.io` subdomain vs custom domain | `github.io` for MVP — a custom domain adds DNS/cert steps for no functional gain. Note the base path changes if you move later |
 | **O2** | Multiple saved scenarios in MVP? | Single scenario vs named list | **Single** in MVP (PRD scenario comparison is a V1.5/V2 feature); the storage schema already accommodates a list |
-| **O3** | Market data licensing | See **§14 D3** for the full analysis | **Open.** Recommend: no bundled series in MVP + derived statistics + user-supplied CSV; full historical replay is licence-gated V2 |
-| **O4** | Analytics vs privacy | See **§14 D5** for the full analysis | **Open.** Recommend: none for MVP, and narrow PRD §29 to the ten user-capability criteria |
+| **O3** | Market data | See **§14 D3** | ✅ **Closed.** Ships none; scripted sequences + optional user-supplied CSV |
+| **O4** | Analytics vs privacy | See **§14 D5** | ✅ **Closed.** None, permanently |
 | **O5** | PWA / offline install | Skip · full service worker | **Skip in MVP** — a service worker adds a cache-invalidation failure mode that interacts badly with auto-deploy-on-merge. Revisit post-MVP |
 | **O6** | Error reporting with no backend | None · Sentry free tier | **None for MVP** — a reporter would transmit data off-device, contradicting §13. Rely on the test suite and a local error boundary with a copyable report |
 

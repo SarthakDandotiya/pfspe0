@@ -3,12 +3,12 @@
 **Product type:** Web application
 **Primary market:** India
 **Primary currency:** INR
-**Primary investment model:** Equity / NIFTY 50 TRI-based modelling
+**Primary investment model:** Equity-oriented modelling driven entirely by **user-supplied assumptions** (index-agnostic; ships no market data)
 **Target user:** Individuals planning long-term wealth, major life events, and financial independence
 **Core philosophy:** Model *life + markets + cash flows* rather than simply calculating SIP returns.
 **Document status:** Revised after adversarial review — see [Appendix A](#appendix-a--adversarial-review-findings) for the findings and how each was resolved.
-**Version:** 2.0 (adversarial-review rebuild)
-**Last updated:** 2026-09-06
+**Version:** 2.1 — client-only, zero-bundled-data architecture
+**Last updated:** 2026-09-07
 
 ---
 
@@ -35,7 +35,7 @@ Instead of one deterministic projection, it generates a **range** of possible fu
 Representative questions the product helps answer:
 
 - When might I reach ₹1 crore?
-- What happens if NIFTY 50 TRI returns only 7%? 11%?
+- What happens if equity returns only 7%? 11%?
 - What if I increase my SIP by 10%?
 - What if I lose my job for a year?
 - What if I buy a ₹1.5 Cr house?
@@ -58,7 +58,7 @@ The single most important output is **not** "You will have ₹X crore." It is:
 1. **Avoid false precision.** Prefer ranges and probabilities over single guaranteed outcomes.
 2. **Model life events explicitly.** Marriage, house, children, illness, job loss, etc.
 3. **Separate short-term money from long-term investments.**
-4. **Use NIFTY 50 TRI, not the price index,** for equity-return modelling.
+4. **Model total return, not price return.** Where a user enters or supplies a historical figure, the UI states whether it is a price-index or a total-return (dividend-reinvested) number — the two differ materially and conflating them silently overstates or understates every projection.
 5. **Every meaningful assumption is user-changeable.**
 6. **Monthly simulation granularity.**
 7. **Show both nominal and inflation-adjusted (real) values.**
@@ -80,7 +80,7 @@ The original PRD promised probability-based outputs (FI probability, confidence 
 |---|---|---|---|
 | E0 | Deterministic single-path | One projection per return assumption | MVP |
 | E1 | Discrete scenario set | Bear / Base / Bull (≥3 fixed paths) | MVP |
-| E2 | Historical replay | Path(s) driven by the real NIFTY 50 TRI monthly series | MVP (single replay), V2 (ensemble) |
+| E2 | Sequence replay | Path(s) driven by a **scripted stress sequence** or a **user-supplied series** (§11.3) | MVP (single replay), V2 (ensemble) |
 | E3 | Stochastic ensemble (Monte Carlo) | Percentile bands, probability-of-success | V2 |
 
 **Honesty matrix — which outputs are legitimate per tier**
@@ -89,7 +89,7 @@ The original PRD promised probability-based outputs (FI probability, confidence 
 |---|---|---|---|
 | Point projection ("corpus at 60") | E0 | ✅ (labelled *Base scenario*) | ✅ |
 | Bear / Base / Bull range | E1 | ✅ | ✅ |
-| Historical stress replay result | E2 | ✅ (single replay) | ✅ (ensemble) |
+| Stress replay result | E2 | ✅ (single replay) | ✅ (ensemble) |
 | Percentile bands (10th/50th/90th) | E3 | ❌ **hidden** | ✅ |
 | "Probability of success = X%" | E3 | ❌ **hidden** | ✅ |
 | Estimated **FI age** | E1 (deterministic) | ✅ shown as *"FI age ≈ 52 (Base scenario)"* | ✅ shown with a range |
@@ -179,7 +179,7 @@ Dynamic table. Each investment supports: current value · asset category · expe
 
 Future-compatible asset classes: NIFTY 50 · NIFTY 500 · Midcap · Smallcap · Gold · Debt · International equity · Individual stocks · FD · EPF · PPF · NPS · Real estate.
 
-> **MVP simplification (explicit):** MVP models a **single equity sleeve (NIFTY 50 TRI) + a debt/cash sleeve**. Multi-asset allocation, glide paths, and rebalancing are V3 (§30–§31 originals). Because MVP is effectively equity-heavy, the risk indicator and stress tests MUST NOT understate concentration risk — they explicitly flag single-asset concentration. (Review finding A-9.)
+> **MVP simplification (explicit):** MVP models a **single equity sleeve + a debt/cash sleeve**, each driven by user-supplied return assumptions. Multi-asset allocation, glide paths, and rebalancing are V3 (§30–§31 originals). Because MVP is effectively equity-heavy, the risk indicator and stress tests MUST NOT understate concentration risk — they explicitly flag single-asset concentration. (Review finding A-9.)
 
 ---
 
@@ -262,7 +262,7 @@ Worked examples (match the original intent):
 Adjust historical returns for forward-looking conservatism.
 
 ```
-Historical CAGR (NIFTY 50 TRI): 12.7%
+Reference CAGR (entered by you):  12.7%
 Forward adjustment:             −3.0%
 Modelled return:                 9.7%
 ```
@@ -277,7 +277,7 @@ Setting name: **Historical Return Adjustment** (range **−5% … +5%**). Rename
 | Base | 9% |
 | Optimistic (Bull) | 11% |
 
-The historical NIFTY 50 TRI CAGR is displayed **separately** for context. The app never implies 9% is guaranteed. **Note:** the single "default return model" is now unambiguous — MVP default is **DiscreteScenarioSet (7/9/11)**; historical modes are opt-in. (Resolves the §13-vs-§70 contradiction, finding A-5.)
+Any reference CAGR the user enters is displayed **separately** and labelled as their own input — the app holds no historical figures of its own (§26). The app never implies 9% is guaranteed. **Note:** the single "default return model" is now unambiguous — MVP default is **DiscreteScenarioSet (7/9/11)**; historical modes are opt-in. (Resolves the §13-vs-§70 contradiction, finding A-5.)
 
 ---
 
@@ -298,8 +298,13 @@ Normal → Crash (−30%) → Recovery ramp → Normal
 ### 11.2 Automatic crash generation
 Off · Historical · Periodic · Random · Historical-distribution.
 
-### 11.3 Historical stress replay (E2)
-Maintain NIFTY 50 TRI drawdown history and classify: Correction 10–20% · Bear 20–30% · Severe bear 30–50% · Extreme >50% (thresholds configurable). The engine identifies drawdowns (peak → trough → recovery), records peak/trough dates, max drawdown, days-to-trough, days-to-recovery, and can **replay or reposition** an event in the future. Labelled **"Historical stress replay,"** never a prediction.
+### 11.3 Stress replay — scripted or user-supplied (E2)
+The app **ships no market data** (§26). Stress replay therefore works on two sources, both under the user's control:
+
+1. **Scripted stress sequences** (default) — named, editable presets the user can tune: a −35% drawdown over 14 months with a 26-month recovery, a lost decade, a V-shaped crash. Configurable, and sufficient to model any shock shape.
+2. **User-supplied series** (optional) — a CSV the user provides. It stays on their device and is never redistributed by the app.
+
+Either way the engine classifies drawdowns (Correction 10–20% · Bear 20–30% · Severe bear 30–50% · Extreme >50%, thresholds configurable), identifies peak → trough → recovery, records max drawdown and durations, and can **replay or reposition** an event. Labelled **"stress replay,"** never a prediction. Where a scripted preset is loosely inspired by a real episode, it is labelled as an **illustrative shock shape**, not as that event's data.
 
 ### 11.4 Sequence-of-returns risk
 Identical average returns produce different outcomes depending on order, especially around retirement and large withdrawals. **Accumulation and withdrawal phases are modelled differently.** Because sequence risk only *manifests* under a varying return path, the product surfaces it via **E2 (historical replay)** and **E3 (Monte Carlo)** — not under a single fixed return. MVP therefore delivers sequence-risk insight through **historical replay** even before Monte Carlo lands. (Resolves finding A-6: a core principle must have at least one MVP-available engine that expresses it.)
@@ -311,7 +316,7 @@ Identical average returns produce different outcomes depending on order, especia
 Optional advanced mode. **1,000–10,000** simulations. Explicitly specified so results are honest and reproducible:
 
 ### 12.1 Distribution
-Monthly equity returns are drawn from a **fat-tailed, negatively-skewed distribution** (Student-t or block-bootstrap of the historical TRI series), **not** a plain normal. Equity returns are fat-tailed; a normal understates exactly the crash risk this tool exists to expose. The chosen distribution is stated in the audit trail. (Review finding A-3.)
+Monthly equity returns are drawn from a **fat-tailed, negatively-skewed distribution** — by default a **parametric Student-t** with user-set mean, volatility and tail weight, since the app ships no market data. Block-bootstrap resampling is available **only** when the user supplies their own series. Never a plain normal. Equity returns are fat-tailed; a normal understates exactly the crash risk this tool exists to expose. The chosen distribution is stated in the audit trail. (Review finding A-3.)
 
 ### 12.2 Randomised variables
 Returns · crash timing · crash magnitude · inflation · salary growth · medical events · job loss · expense variation.
@@ -372,12 +377,12 @@ The **real (inflation-adjusted) figure is the prominent default.** In V2, percen
 | SIP increase | 5%/year |
 | Base return | 9% |
 | Return range | 7% / 9% / 11% (Bear/Base/Bull) |
-| **Equity volatility σ (annual)** | **~18%** (NIFTY 50 TRI, historical order of magnitude) |
-| **Debt/cash volatility σ (annual)** | **~4%** |
-| **Equity–debt correlation** | **~0.2** |
+| **Equity volatility σ (annual)** | **18%** — a generic planning placeholder for a broad equity sleeve, not a measured figure. User-editable. |
+| **Debt/cash volatility σ (annual)** | **4%** — generic placeholder, user-editable |
+| **Equity–debt correlation** | **0.2** — generic placeholder, user-editable |
 | General inflation | 6% |
 | Healthcare inflation | 8% |
-| Historical dataset | NIFTY 50 TRI |
+| Historical dataset | **None bundled** — scripted sequences by default; user-supplied CSV optional |
 | Default return model | Discrete scenarios (7/9/11) |
 | Market-crash model | Historical drawdowns |
 | Simulation frequency | Monthly |
@@ -386,7 +391,7 @@ The **real (inflation-adjusted) figure is the prominent default.** In V2, percen
 | Output | Real (default) + nominal |
 | Advanced output | Monte Carlo probability (V2) |
 
-> The 9% base is a **conservative planning assumption**, not a claim about future NIFTY 50 returns. Volatility/correlation defaults are order-of-magnitude planning values, editable, and the exact source period is shown in the audit.
+> The 9% base is a **conservative planning assumption**, not a claim about future returns of any index. Volatility and correlation defaults are **generic, unsourced planning placeholders** — order-of-magnitude starting points, fully editable, and labelled as such wherever they appear.
 
 ---
 
@@ -493,7 +498,7 @@ Inflation:        General 6%, Healthcare 8%
 Salary growth:    8%   |  SIP growth: 5%
 Crash model:      Historical
 Tax ruleset:      AY 2026-27
-Data version:     NIFTY 50 TRI snapshot 2026-08-31
+Return source:    User assumptions (no bundled market data)
 RNG seed:         0x8F3A… (Monte Carlo)
 Runs:             5,000   |  Horizon: 37y (to plan-until 90)   |  Frequency: Monthly
 ```
@@ -529,19 +534,26 @@ Reverse solvers show a **frontier of combinations**, not a single answer, consis
 
 A tool that claims to be "auditable" must be **reproducible.** Two requirements the original omitted:
 
-1. **Scenario pins its data version.** Each saved scenario records the **market-data snapshot** it used (e.g. `NIFTY 50 TRI snapshot 2026-08-31`). Updating the historical dataset does **not** silently change old scenarios; the user is prompted to re-run against new data. (Review finding A-19.)
+1. **Scenario pins its assumption set.** Each saved scenario records the full assumption set it was computed against — including the id of any user-supplied series — so results are never silently changed by a later edit or app update. The user is prompted to re-run rather than shown stale numbers. (Review finding A-19.)
 2. **Monte Carlo pins its RNG seed.** Percentiles are otherwise irreproducible run-to-run, contradicting auditability. The seed is stored and shown (§23). (Review finding A-20.)
 
-**Data source & licensing.** Historical NIFTY 50 price index and TRI come from an authoritative NSE/index source. The exact TRI start date is displayed and is **not overstated** — the NIFTY 50 price index base is Nov-1995, but the **published TRI series begins later (≈1999)**; the UI shows the true available range rather than claiming "TRI 1995–present." **Redistribution/licensing terms for NSE index data MUST be cleared before shipping** (legal dependency, tracked in §33). (Review finding A-21.)
+**Data policy — the app ships no third-party market data.** This is a deliberate product decision, not a temporary gap. Every number the engine consumes is either a **user-entered assumption** or a **generic, clearly-labelled planning placeholder** the user can change (§16). There is no bundled index series, no derived statistics table, and no data fetched at runtime — consistent with the client-only architecture, which has nowhere to fetch from anyway.
+
+Consequences, stated plainly so nothing is oversold:
+
+- The app **cannot** claim "this is what the market actually did." It makes no historical claims at all, so it cannot make a wrong one.
+- Users who want historical realism **supply their own series**, which stays on their device.
+- Any figure that looks historical in the UI (a CAGR to adjust, a drawdown shape) is either user-entered or labelled an **illustrative placeholder**. The distinction between *historical fact* and *user assumption* — required by §23 — becomes trivially enforceable, because the app holds no historical facts.
 
 ---
 
 ## 27. Non-functional requirements
 
-- **Performance / architecture.** Monte Carlo at 10,000 runs × monthly × 40 years ≈ millions of iterations. The compute path MUST be specified per milestone: MVP deterministic/replay math runs **client-side**; **V2 Monte Carlo runs server-side (or in a Web Worker/WASM)** with a target of **≤ 3 s** for a 5,000-run scenario and a progress indicator. "Immediate" slider feedback applies only to E0/E1 recomputation; stochastic runs use an explicit **"Run simulation"** action. (Review finding A-22.)
-- **Persistence & accounts.** Data model (§28) is stored per authenticated user; **local-only mode** is offered for privacy-sensitive users (no server storage). Auth method specified at build time; MVP MAY ship local-only to reduce PII.
-- **Security & privacy (India-specific).** Encryption in transit and at rest · user-controlled deletion · data export · minimal PII · no bank credentials · no bank integration required for MVP · no selling of data · clear privacy policy. **Compliance with India's DPDP Act 2023** (consent, purpose limitation, data-principal rights, breach notification) MUST be assessed; if any processing occurs, a Consent notice and grievance contact are required. (Review finding A-23.)
-- **Regulatory.** The product provides **generic planning simulation, not personalised investment advice under SEBI (Investment Advisers) Regulations, 2013.** Legal review MUST confirm that disclaimers, the "not advice" framing, and the absence of specific security recommendations keep the product outside RIA scope. This is a **launch gate**, not a footnote. (Review finding A-24.)
+- **Architecture — client-only, permanently.** The application is a **static site with no backend of any kind.** All computation runs in the user's browser. See `TECHNICAL_SPEC.md` for the full architecture.
+- **Performance.** Monte Carlo at 10,000 runs × monthly × 40 years ≈ millions of iterations, executed in **Web Workers on the client**. Run count is a **scenario parameter, identical on every device** — a slower device takes longer to produce *the same* numbers, and never returns fewer runs and therefore different percentiles (that would break share-link reproducibility). Target ≤ 3 s desktop / ≤ 8 s mid-range mobile for 5,000 runs, always with progress and cancel. "Immediate" slider feedback applies only to E0/E1; stochastic runs use an explicit **"Run simulation"** action. (Review finding A-22.)
+- **Persistence — local-only, permanently.** There are **no accounts and no server storage.** Data is held in the browser's local storage and never transmitted. Portability is provided by **file export/import** and **share links** (which encode state in the URL fragment, so it is never sent to any server). Note that browser storage can be cleared by the user or evicted by the browser — the UI says "saved on this device" and never promises more.
+- **Security & privacy.** The privacy posture is architectural rather than procedural: **no data is collected, transmitted, or stored off-device, so there is nothing to breach, leak, or sell.** No accounts, no credentials, no bank integration, no PII, no analytics, no third-party runtime requests. Served over HTTPS with a strict CSP. The privacy statement is short and literally true: *everything stays in your browser; share links contain the inputs you put in them.*
+- **Positioning.** The product is a **generic modelling calculator over the user's own assumptions.** It does not recommend securities or products, does not tell the user what to do, and does not personalise anything from data we hold — because we hold none. Model outputs are phrased as computed consequences of inputs ("changing X to Y moves the modelled outcome from A to B"), never as instructions. A persistent, prominent notice states it is a modelling tool for exploring assumptions, not advice. (Review finding A-24.)
 - **Accessibility & platform.** WCAG 2.1 AA target · responsive layout with a **mobile-viable alternative to sliders** (steppers/number entry) since slider-heavy UIs are hostile on phones · documented browser support matrix. (Review finding A-25.)
 - **Validation.** Reject/flag: target age ≤ current age · plan-until age ≤ retirement age · negative amounts · SIP growth ≫ salary growth (warn) · retirement age > plan-until age · empty required fields. Every input has a defined default, range, and error message.
 - **Testing.** The return engine, tax engine, and cash-flow engine ship with unit tests; golden-master scenarios lock known outputs; Monte Carlo is tested for statistical stability at a fixed seed.
@@ -591,13 +603,9 @@ Scenarios are clonable and comparable (corpus · net worth · FI age · goal suc
 1. Enter their current position in **under 5 minutes**.
 2. Model major life events. 3. Adjust any major assumption. 4. Understand how a change moves the outcome. 5. See optimistic **and** pessimistic outcomes. 6. Understand when/why the plan fails. 7. Identify the highest-impact decisions. 8. Compare strategies. 9. Understand nominal vs real. 10. Stress-test against shocks.
 
-**Product metrics (the original had none; added):**
-- **Activation:** % of new users who complete a first scenario (target defined pre-launch).
-- **Engagement:** % who create ≥ 2 scenarios or run a stress test.
-- **Model trust:** % who open a "Why?"/audit view.
-- **Correctness (internal):** engine golden-master tests pass rate = 100% at release.
+**Correctness (internal, measurable without any telemetry):** engine golden-master tests pass rate = 100% at release; engine mutation score ≥ 85%.
 
-(Review finding A-26.)
+**On behavioural product metrics.** The adversarial review (A-26) originally added activation/engagement/trust metrics. **They are deliberately dropped.** Measuring them requires a third-party tracker, which would contradict the "nothing leaves the device" property that is now the product's defining characteristic — a poor trade to satisfy a metric. The ten capability criteria above are verified by **observing real people use it**, which at this stage is more informative than a funnel anyway.
 
 ---
 
@@ -643,13 +651,15 @@ Tracked, owner-assigned before build:
 
 | # | Risk / open question | Type | Gate |
 |---|---|---|---|
-| R1 | NSE/index-data redistribution licensing for TRI | Legal | Before MVP ship |
-| R2 | SEBI RIA scope — do disclaimers keep us out of "investment advice"? | Legal | Before MVP ship |
-| R3 | DPDP Act 2023 obligations if any PII is stored server-side | Legal/Privacy | Before any server storage |
-| R4 | Monte Carlo distribution & correlation calibration (t vs bootstrap) | Modelling | Before V2 |
-| R5 | Client vs server compute budget for 10k-run Monte Carlo | Technical | Before V2 |
-| R6 | Auth model & local-only mode decision | Technical/Privacy | Before MVP ship |
-| R7 | Tax-ruleset update cadence and who maintains it | Ops | Before V2 tax engine |
+| # | Item | Type | Status |
+|---|---|---|---|
+| R1 | Third-party market-data redistribution | — | ✅ **Closed by design.** No market data ships (§26); there is nothing to redistribute |
+| R2 | Positioning as a calculator, not advice | Product | ✅ **Closed by design.** Generic calculator over user-supplied assumptions; no recommendations, no personalisation, no data held (§27) |
+| R3 | Personal-data obligations | Privacy | ✅ **Closed by design.** No data is collected or transmitted; nothing is processed off-device (§27) |
+| R4 | Monte Carlo distribution & correlation calibration | Modelling | Open — parametric Student-t default; needs sensible tail/correlation defaults before V2 |
+| R5 | Compute budget for 10k-run Monte Carlo | Technical | ✅ **Closed.** Client-side workers; budgets and the no-allocation-in-hot-loop rule in `TECHNICAL_SPEC.md` §5.4 |
+| R6 | Auth model | Technical | ✅ **Closed by design.** No accounts; local-only (§27) |
+| R7 | Tax-ruleset update cadence and who maintains it | Ops | Open — before the V2 tax engine |
 
 ---
 
@@ -705,12 +715,12 @@ The following issues were identified in the source PRD and resolved in this rebu
 | A-18 | 🟠 | **"Show exactly which assumption caused failure"** over-promises — combined shocks are multi-causal. | One-at-a-time + leave-one-out attribution instead of a single "cause" (§22). |
 | A-19 | 🟠 | **No data-version pinning** — updating historical data silently changes saved scenarios, breaking auditability. | Scenarios pin a data snapshot version (§26, §28). |
 | A-20 | 🟠 | **Monte Carlo not reproducible** — no RNG seed, contradicting the "auditable" claim. | Seed stored and displayed (§23, §26, §28). |
-| A-21 | 🟠 | **"TRI 1995–present" likely overstated** (published TRI series starts ≈1999); NSE data redistribution licensing unaddressed. | UI shows true available range; licensing tracked as launch gate R1 (§26, §33). |
-| A-22 | 🔴 | **No performance/architecture spec** — 10k-run monthly Monte Carlo in a browser with "immediate" slider updates is infeasible as stated. | Compute path, latency budget, and explicit "Run simulation" for stochastic modes (§27). |
-| A-23 | 🟠 | **Privacy section generic** — no reference to India's DPDP Act 2023 despite sensitive financial PII. | DPDP assessment + consent/rights required for any server storage (§27, R3). |
-| A-24 | 🔴 | **No SEBI regulatory analysis** — the app models investments; "not advice" was asserted but never assessed against SEBI (Investment Advisers) Regulations, 2013. | Legal launch gate R2; framing/disclaimers reviewed (§27, §33). |
+| A-21 | 🟠 | **Historical-data claims and redistribution** — "TRI 1995–present" was likely overstated, and bundling third-party index data into a public static site is redistribution, not consumption. | **Resolved by removing the dependency entirely:** the app ships no market data (§26). Scripted stress sequences replace it; users may supply their own series locally. The app makes no historical claims, so it cannot make a wrong one. |
+| A-22 | 🔴 | **No performance/architecture spec** — 10k-run monthly Monte Carlo in a browser with "immediate" slider updates is infeasible as stated. | Client-side Web Workers, device-independent run count, latency budgets, and explicit "Run simulation" for stochastic modes (§27; `TECHNICAL_SPEC.md` §5.4). |
+| A-23 | 🟠 | **Privacy section generic** — asserted good intentions without an architecture to back them. | **Resolved architecturally:** no accounts, no server, no collection, no transmission, no analytics. There is nothing to breach or disclose beyond "it stays in your browser" (§27). |
+| A-24 | 🔴 | **"Not advice" asserted but not designed for** — the app models investments, yet nothing in the design prevented it from drifting into recommendations. | **Resolved by product design:** a generic calculator over user-supplied assumptions — no securities or products named, no instructions to the user, no personalisation (we hold no data), outputs phrased as computed consequences of inputs (§27). |
 | A-25 | 🟡 | **No accessibility / mobile / browser requirements**; slider-heavy UI is hostile on phones. | WCAG 2.1 AA, responsive with stepper fallback, browser matrix (§27). |
-| A-26 | 🟡 | **Success criteria had no product metrics** — only a user-capability checklist. | Activation/engagement/trust/correctness metrics added (§29). |
+| A-26 | 🟡 | **Success criteria had no product metrics** — only a user-capability checklist. | Internal correctness metrics added; **behavioural metrics deliberately dropped** — measuring them needs a tracker, which would contradict the no-data-leaves-the-device property (§29). |
 | A-27 | 🟡 | **Undefined goal-status thresholds** and risk-indicator rubric (colours with no numeric basis). | Numeric thresholds and a documented rubric (§6). |
 | A-28 | 🟡 | **Calendar-year vs age used interchangeably** with no anchoring rule. | Canonical month-index time model with a stated anchor (§4). |
 | A-29 | 🟡 | **Bucket "bias" ambiguous** (step vs spread) and **no probability weights** for buckets. | "Spread per step" defined; default normal weights that sum to 1 (§10.1). |
