@@ -528,7 +528,8 @@ Levers: route/chart code-splitting, worker chunks loaded on demand, historical d
 The architecture is the privacy story: **no server means no data collection.** Financial inputs live only in the user's browser.
 
 - **HTTPS** enforced by GitHub Pages.
-- **CSP** via `<meta http-equiv>` (no server headers available on Pages): `default-src 'self'`, no `unsafe-eval`. Note the theme-flash script (§8.2) is inline — it needs a hash-based CSP allowance rather than `unsafe-inline`.
+- **CSP** via `<meta http-equiv>` (no server headers available on Pages): `default-src 'self'`, `object-src 'none'`, `base-uri 'none'`, `connect-src 'self'`, no `unsafe-inline`/`unsafe-eval` on scripts. The pre-paint theme script (§8.2) is inline, so the build hashes it into `script-src` automatically (`cspPlugin` in `vite.config.ts`) — build-only, since Vite's dev server injects its own inline scripts for HMR.
+- **Known host limitation — no clickjacking protection.** `frame-ancestors` is *ignored* when a CSP is delivered via `<meta>`; it requires an HTTP header, and GitHub Pages cannot set headers (nor `X-Frame-Options`). The directive is therefore deliberately omitted — including it only produces a console error. Accepted: the app has no accounts, no credentials, and no state-changing actions an attacker could induce by framing it. `verify-build.mjs` asserts it stays absent so it is not re-added as dead noise. Revisit only if the app moves to a host that can set headers.
 - **No third-party requests at runtime** — no CDN fonts, no trackers, no external APIs. Everything is same-origin, which also makes the CSP tight and the offline story easy.
 - **No secrets** in the client (there is nowhere to hide one in a static bundle, so there must be none to hide).
 - **No PII collected** — no name, email, phone, or PAN. Data is figures without identity.

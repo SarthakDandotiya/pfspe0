@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content="A client-only simulator for modelling long-term wealth, life events and financial independence. All data stays in your browser." />
+    <title>Wealth &amp; Life Planning Simulator</title>
+    <script>
+      // Resolve the theme before first paint so there is no flash of the wrong
+      // theme. Must stay inline and synchronous: a deferred module runs too
+      // late and dark-mode users see a white flash.
+      // Hashed into the CSP by the build (vite.config.ts) — keep it inline.
+      (function () {
+        var theme = 'light';
+        try {
+          var stored = null;
+          try {
+            stored = localStorage.getItem('pwlps:v1:theme');
+          } catch (e) {
+            /* Safari private mode and blocked-storage settings throw here. */
+          }
+          if (stored !== 'light' && stored !== 'dark' && stored !== 'system') {
+            stored = 'system';
+          }
+          var prefersDark =
+            typeof window.matchMedia === 'function' &&
+            window.matchMedia('(prefers-color-scheme: dark)').matches;
+          theme = stored === 'dark' || (stored === 'system' && prefersDark) ? 'dark' : 'light';
+        } catch (e) {
+          theme = 'light';
+        }
+        document.documentElement.setAttribute('data-theme', theme);
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

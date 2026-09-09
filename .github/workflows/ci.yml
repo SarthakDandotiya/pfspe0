@@ -1,0 +1,90 @@
+name: CI
+
+# Every PR must pass this before it can merge. Because merging to main
+# publishes immediately (deploy.yml), this is the gate that makes
+# deploy-on-merge safe. See TECHNICAL_SPEC §10.3.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    name: Lint, types, engine purity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run check:purity
+
+  unit:
+    name: Unit, component and a11y tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Coverage thresholds are enforced here (vitest.config.ts).
+      - run: npm run test:coverage
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 7
+
+  build:
+    name: Build, base path, CSP and budgets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run verify:build
+      - run: npm run check:budget
+
+  e2e:
+    name: E2E (${{ matrix.project }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Chromium covers Chrome and Edge; WebKit is the closest CI proxy for
+        # Safari. Mobile projects are first-class: phones are the primary target.
+        project: [chromium, firefox, webkit, mobile-chrome, mobile-safari]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps ${{ matrix.project == 'firefox' && 'firefox' || (contains(matrix.project, 'safari') || matrix.project == 'webkit') && 'webkit' || 'chromium' }}
+      - run: npx playwright test --project=${{ matrix.project }}
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report-${{ matrix.project }}
+          path: playwright-report/
+          retention-days: 7
