@@ -2,7 +2,11 @@ import { defineConfig, devices } from '@playwright/test';
 
 const PORT = 4173;
 // Must include the GitHub Pages base path, or every navigation 404s.
-const BASE_URL = `http://localhost:${PORT}/pfspe0/`;
+const LOCAL_URL = `http://localhost:${PORT}/pfspe0/`;
+// Point at the deployed site to smoke-test production after a release:
+//   PLAYWRIGHT_BASE_URL=https://sarthakdandotiya.github.io/pfspe0/ npm run test:e2e
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? LOCAL_URL;
+const IS_REMOTE = BASE_URL !== LOCAL_URL;
 
 export default defineConfig({
   testDir: './e2e',
@@ -21,10 +25,15 @@ export default defineConfig({
     { name: 'mobile-chrome', use: { ...devices['Pixel 7'] } },
     { name: 'mobile-safari', use: { ...devices['iPhone 14'] } },
   ],
-  webServer: {
-    command: 'npm run build && npm run preview',
-    url: BASE_URL,
-    reuseExistingServer: !process.env.CI,
-    timeout: 180_000,
-  },
+  // No local server needed when testing an already-deployed site.
+  ...(IS_REMOTE
+    ? {}
+    : {
+        webServer: {
+          command: 'npm run build && npm run preview',
+          url: BASE_URL,
+          reuseExistingServer: !process.env.CI,
+          timeout: 180_000,
+        },
+      }),
 });

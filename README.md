@@ -40,6 +40,7 @@ npm run dev          # http://localhost:5173/pfspe0/
 | `npm run check:purity` | Asserts `src/engine` stays free of DOM and framework code |
 | `npm test` / `test:coverage` | Unit, component and a11y tests (coverage gates enforced) |
 | `npm run test:e2e` | Playwright across Chromium, Firefox, WebKit + two mobile profiles |
+| `PLAYWRIGHT_BASE_URL=<url> npm run test:e2e` | Run the same suite against a deployed site instead of a local build |
 | `npm run verify:build` | Asserts the Pages base path and CSP hashes in `dist/` |
 | `npm run check:budget` | Enforces the gzipped bundle budget |
 
@@ -104,6 +105,17 @@ transmitted. Note that browser storage is not permanent — it can be cleared by
 you or evicted by the browser (Safari drops it after 7 days without a visit),
 which is why the app says "saved on this device" rather than "saved". Export
 and share links will provide portable backups from P2/P3.
+
+## Deployment
+
+Live at **https://sarthakdandotiya.github.io/pfspe0/**, published by
+`deploy.yml` on every push to `main`.
+
+To smoke-test the deployed site with the real suite:
+
+```bash
+PLAYWRIGHT_BASE_URL=https://sarthakdandotiya.github.io/pfspe0/ npm run test:e2e
+```
 
 ## Browser support
 
