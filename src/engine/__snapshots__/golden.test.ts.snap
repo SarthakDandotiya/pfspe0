@@ -1,0 +1,137 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`golden master > Build My Life — base scenario 1`] = `
+{
+  "corpusAt": {
+    "year10": "₹71.84L",
+    "year20": "₹2.64Cr",
+    "year30": "₹7.78Cr",
+    "year5": "₹29.71L",
+  },
+  "finalEmergencyFund": "₹6.5L",
+  "finalNominal": "₹9.53Cr",
+  "finalReal": "₹1.48Cr",
+  "months": 384,
+  "monthsWithShortfall": 0,
+  "returnModel": "Base 9%",
+  "totalContributions": "₹2.26Cr",
+  "totalGrowth": "₹7.21Cr",
+  "totalWithdrawals": "₹0",
+}
+`;
+
+exports[`golden master > Build My Life — bear / base / bull 1`] = `
+{
+  "base": {
+    "corpusAt": {
+      "year10": "₹71.84L",
+      "year20": "₹2.64Cr",
+      "year30": "₹7.78Cr",
+      "year5": "₹29.71L",
+    },
+    "finalEmergencyFund": "₹6.5L",
+    "finalNominal": "₹9.53Cr",
+    "finalReal": "₹1.48Cr",
+    "months": 384,
+    "monthsWithShortfall": 0,
+    "returnModel": "Base",
+    "totalContributions": "₹2.26Cr",
+    "totalGrowth": "₹7.21Cr",
+    "totalWithdrawals": "₹0",
+  },
+  "bear": {
+    "corpusAt": {
+      "year10": "₹64.15L",
+      "year20": "₹2.11Cr",
+      "year30": "₹5.55Cr",
+      "year5": "₹27.96L",
+    },
+    "finalEmergencyFund": "₹6.5L",
+    "finalNominal": "₹6.64Cr",
+    "finalReal": "₹1.03Cr",
+    "months": 384,
+    "monthsWithShortfall": 0,
+    "returnModel": "Bear",
+    "totalContributions": "₹2.26Cr",
+    "totalGrowth": "₹4.32Cr",
+    "totalWithdrawals": "₹0",
+  },
+  "bull": {
+    "corpusAt": {
+      "year10": "₹80.56L",
+      "year20": "₹3.32Cr",
+      "year30": "₹11.12Cr",
+      "year5": "₹31.56L",
+    },
+    "finalEmergencyFund": "₹6.5L",
+    "finalNominal": "₹13.99Cr",
+    "finalReal": "₹2.17Cr",
+    "months": 384,
+    "monthsWithShortfall": 0,
+    "returnModel": "Bull",
+    "totalContributions": "₹2.26Cr",
+    "totalGrowth": "₹11.67Cr",
+    "totalWithdrawals": "₹0",
+  },
+}
+`;
+
+exports[`golden master > a crash five years before the target age 1`] = `
+{
+  "corpusAt": {
+    "year10": "₹71.84L",
+    "year20": "₹2.64Cr",
+    "year30": "₹5.39Cr",
+    "year5": "₹29.71L",
+  },
+  "finalEmergencyFund": "₹6.5L",
+  "finalNominal": "₹7.22Cr",
+  "finalReal": "₹1.12Cr",
+  "months": 384,
+  "monthsWithShortfall": 0,
+  "returnModel": "Crash at age 55",
+  "totalContributions": "₹2.26Cr",
+  "totalGrowth": "₹4.9Cr",
+  "totalWithdrawals": "₹0",
+}
+`;
+
+exports[`golden master > a near-retiree drawing down on a modest corpus 1`] = `
+{
+  "corpusAt": {
+    "year10": "₹4.13Cr",
+    "year20": "₹4.7Cr",
+    "year30": "beyond horizon",
+    "year5": "₹3.57Cr",
+  },
+  "finalEmergencyFund": "₹20L",
+  "finalNominal": "₹3.76Cr",
+  "finalReal": "₹77.87L",
+  "months": 324,
+  "monthsWithShortfall": 324,
+  "returnModel": "Retirement 8%",
+  "totalContributions": "₹0",
+  "totalGrowth": "₹8.61Cr",
+  "totalWithdrawals": "₹7.85Cr",
+}
+`;
+
+exports[`golden master > a squeezed household where the SIP is throttled 1`] = `
+{
+  "corpusAt": {
+    "year10": "₹41.65L",
+    "year20": "₹1.25Cr",
+    "year30": "₹3.08Cr",
+    "year5": "₹19.83L",
+  },
+  "finalEmergencyFund": "₹6.5L",
+  "finalNominal": "₹3.64Cr",
+  "finalReal": "₹56.43L",
+  "months": 384,
+  "monthsWithShortfall": 384,
+  "returnModel": "Base 9%",
+  "totalContributions": "₹40.78L",
+  "totalGrowth": "₹3.2Cr",
+  "totalWithdrawals": "₹2.79L",
+}
+`;

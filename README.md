@@ -9,14 +9,15 @@ accounts, no servers, no analytics, and no data leaves your device.**
 
 ## Status
 
-**P0 complete** — skeleton, theming, test infrastructure and the deploy
-pipeline. The simulation engine itself starts at P1.
+**P1 complete** — the simulation engine core. It is pure TypeScript with no
+UI yet, by design: the engine is the part that must be numerically correct, so
+it is built and locked down before any interface exists to bend it.
 
 | Phase | Deliverable | Status |
 |---|---|---|
 | P0 | Skeleton, theming, CI, Pages deploy | ✅ Done |
-| P1 | Engine core — time, money, returns, cash flow | Next |
-| P2 | Shell — store, persistence, reset, layout | Planned |
+| P1 | Engine core — time, money, returns, cash flow | ✅ Done |
+| P2 | Shell — store, persistence, reset, layout | Next |
 | P3 | Share links | Planned |
 | P4 | Visualisation | Planned |
 
@@ -41,6 +42,34 @@ npm run dev          # http://localhost:5173/pfspe0/
 | `npm run test:e2e` | Playwright across Chromium, Firefox, WebKit + two mobile profiles |
 | `npm run verify:build` | Asserts the Pages base path and CSP hashes in `dist/` |
 | `npm run check:budget` | Enforces the gzipped bundle budget |
+
+## The engine
+
+`src/engine` is pure, framework-free TypeScript — no React, no DOM, no I/O, no
+`Math.random`. It carries a **100% coverage gate**.
+
+| Module | What it owns |
+|---|---|
+| `time/` | Canonical month-index clock; ages and calendar dates are both derived from it, so they cannot drift |
+| `money/` | Integer-paise arithmetic — floats would accumulate drift over ~480 monthly steps |
+| `rates/` | Annual ↔ monthly conversion by compounding, never division by 12 |
+| `returns/` | Fixed, discrete Bear/Base/Bull, weighted buckets, scripted sequences and crash shapes |
+| `inflation/` | Per-category expense growth; the general rate is the deflator for real values |
+| `cashflow/` | The single allocation hierarchy — one ordering governs every funding decision |
+| `scenario/` | Input types and validation that collects every problem, not just the first |
+| `simulate.ts` | The monthly orchestrator |
+
+Three kinds of test guard it:
+
+- **Unit tests** for each module's behaviour and error handling.
+- **Property-based tests** (fast-check) for invariants that must hold across
+  *all* inputs: money is conserved exactly in paise, no balance goes negative,
+  raising the SIP never lowers the final corpus, bear ≤ base ≤ bull, the same
+  inputs give byte-identical output, and an earlier cash-flow bucket is never
+  starved for a later one.
+- **Golden-master snapshots** of realistic end-to-end scenarios, formatted in
+  compact INR so a diff reads as `₹2.43Cr → ₹2.51Cr` and a reviewer can
+  actually judge it. Updating one requires `-u` and an explanation.
 
 ## How the safety rails work
 

@@ -3,7 +3,7 @@ import { formatCompactINR, rupeesToPaise } from './engine/money/paise';
 
 const MILESTONES: ReadonlyArray<{ phase: string; title: string; done: boolean }> = [
   { phase: 'P0', title: 'Skeleton, theming, CI and Pages deploy', done: true },
-  { phase: 'P1', title: 'Engine core — time, money, returns, cash flow', done: false },
+  { phase: 'P1', title: 'Engine core — time, money, returns, cash flow', done: true },
   { phase: 'P2', title: 'Shell — store, persistence, reset, layout', done: false },
   { phase: 'P3', title: 'Share links', done: false },
   { phase: 'P4', title: 'Visualisation', done: false },

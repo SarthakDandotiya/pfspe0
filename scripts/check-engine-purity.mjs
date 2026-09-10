@@ -26,7 +26,10 @@ function walk(dir) {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) out.push(...walk(full));
-    else if (/\.tsx?$/.test(full)) out.push(full);
+    // Tests are not shipped, and their prose and test names may legitimately
+    // contain these words (e.g. "rejects a zero-month window"). The rule is
+    // about engine SOURCE staying pure.
+    else if (/\.tsx?$/.test(full) && !/\.(test|spec)\.tsx?$/.test(full)) out.push(full);
   }
   return out;
 }
@@ -43,8 +46,14 @@ const violations = [];
 for (const file of files) {
   const source = readFileSync(file, 'utf8');
   source.split('\n').forEach((line, index) => {
-    // Ignore comments: prose may legitimately mention these names.
-    const code = line.replace(/\/\/.*$/, '').replace(/^\s*\*.*$/, '');
+    // Strip comments and string literals: prose and labels may legitimately
+    // mention these names without using the global.
+    const code = line
+      .replace(/\/\/.*$/, '')
+      .replace(/^\s*\*.*$/, '')
+      .replace(/'(?:[^'\\]|\\.)*'/g, "''")
+      .replace(/"(?:[^"\\]|\\.)*"/g, '""')
+      .replace(/`(?:[^`\\]|\\.)*`/g, '``');
     for (const name of FORBIDDEN) {
       const pattern = new RegExp(`(^|[^.\\w])${name.replace('.', '\\.')}\\b`);
       if (pattern.test(code)) {
